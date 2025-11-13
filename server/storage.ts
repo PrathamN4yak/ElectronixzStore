@@ -13,6 +13,12 @@ import {
   type InsertOrder,
   type Admin,
   type InsertAdmin,
+  type User,
+  type InsertUser,
+  type GiftCode,
+  type InsertGiftCode,
+  type GiftCodeRedemption,
+  type InsertGiftCodeRedemption,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -21,11 +27,12 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
   
-  getAllCartItems(): Promise<CartItem[]>;
+  getAllCartItems(userId: string): Promise<CartItem[]>;
   getCartItem(id: string): Promise<CartItem | undefined>;
   addToCart(item: InsertCartItem): Promise<CartItem>;
   updateCartItemQuantity(id: string, quantity: number): Promise<CartItem | undefined>;
   removeFromCart(id: string): Promise<boolean>;
+  clearCart(userId: string): Promise<void>;
   
   createContactMessage(message: InsertContactMessage): Promise<ContactMessage>;
   
@@ -46,6 +53,20 @@ export interface IStorage {
   
   getAdminByEmail(email: string): Promise<Admin | undefined>;
   createAdmin(admin: InsertAdmin): Promise<Admin>;
+  
+  getUser(id: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUserWalletBalance(id: string, amount: number): Promise<User | undefined>;
+  
+  getAllGiftCodes(): Promise<GiftCode[]>;
+  getGiftCodeByCode(code: string): Promise<GiftCode | undefined>;
+  getGiftCode(id: string): Promise<GiftCode | undefined>;
+  createGiftCode(giftCode: InsertGiftCode): Promise<GiftCode>;
+  updateGiftCode(id: string, updates: Partial<GiftCode>): Promise<GiftCode | undefined>;
+  deleteGiftCode(id: string): Promise<boolean>;
+  
+  getGiftCodeRedemption(userId: string, giftCodeId: string): Promise<GiftCodeRedemption | undefined>;
+  createGiftCodeRedemption(redemption: InsertGiftCodeRedemption): Promise<GiftCodeRedemption>;
 }
 
 export class MemStorage implements IStorage {
@@ -56,6 +77,9 @@ export class MemStorage implements IStorage {
   private promoCodes: Map<string, PromoCode>;
   private orders: Map<string, Order>;
   private admins: Map<string, Admin>;
+  private users: Map<string, User>;
+  private giftCodes: Map<string, GiftCode>;
+  private giftCodeRedemptions: Map<string, GiftCodeRedemption>;
 
   constructor() {
     this.products = new Map();
@@ -65,9 +89,13 @@ export class MemStorage implements IStorage {
     this.promoCodes = new Map();
     this.orders = new Map();
     this.admins = new Map();
+    this.users = new Map();
+    this.giftCodes = new Map();
+    this.giftCodeRedemptions = new Map();
     this.initializeProducts();
     this.initializeAdmin();
     this.initializePromoCodes();
+    this.initializeDefaultUser();
   }
 
   private initializeProducts() {
@@ -243,8 +271,10 @@ export class MemStorage implements IStorage {
     return product;
   }
 
-  async getAllCartItems(): Promise<CartItem[]> {
-    return Array.from(this.cartItems.values());
+  async getAllCartItems(userId: string): Promise<CartItem[]> {
+    return Array.from(this.cartItems.values()).filter(
+      (item) => item.userId === userId
+    );
   }
 
   async getCartItem(id: string): Promise<CartItem | undefined> {
@@ -253,7 +283,7 @@ export class MemStorage implements IStorage {
 
   async addToCart(insertItem: InsertCartItem): Promise<CartItem> {
     const existingItem = Array.from(this.cartItems.values()).find(
-      (item) => item.productId === insertItem.productId
+      (item) => item.productId === insertItem.productId && item.userId === insertItem.userId
     );
 
     if (existingItem) {
@@ -286,6 +316,13 @@ export class MemStorage implements IStorage {
 
   async removeFromCart(id: string): Promise<boolean> {
     return this.cartItems.delete(id);
+  }
+
+  async clearCart(userId: string): Promise<void> {
+    const userCartItems = Array.from(this.cartItems.entries()).filter(
+      ([_, item]) => item.userId === userId
+    );
+    userCartItems.forEach(([id]) => this.cartItems.delete(id));
   }
 
   async createContactMessage(
@@ -415,6 +452,106 @@ export class MemStorage implements IStorage {
     const admin: Admin = { ...insertAdmin, id };
     this.admins.set(id, admin);
     return admin;
+  }
+
+  private initializeDefaultUser() {
+    const userId = "guest-user";
+    const user: User = {
+      id: userId,
+      displayName: "Guest User",
+      walletBalance: "100000",
+      createdAt: new Date(),
+    };
+    this.users.set(userId, user);
+  }
+
+  async getUser(id: string): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = randomUUID();
+    const user: User = {
+      ...insertUser,
+      id,
+      walletBalance: "0",
+      createdAt: new Date(),
+    };
+    this.users.set(id, user);
+    return user;
+  }
+
+  async updateUserWalletBalance(id: string, amount: number): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+
+    const currentBalance = parseFloat(user.walletBalance);
+    const newBalance = currentBalance + amount;
+    
+    if (newBalance < 0) {
+      throw new Error("Insufficient wallet balance");
+    }
+
+    const updatedUser = { ...user, walletBalance: newBalance.toFixed(2) };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+
+  async getAllGiftCodes(): Promise<GiftCode[]> {
+    return Array.from(this.giftCodes.values());
+  }
+
+  async getGiftCodeByCode(code: string): Promise<GiftCode | undefined> {
+    return Array.from(this.giftCodes.values()).find(
+      (gc) => gc.code.toUpperCase() === code.toUpperCase() && gc.active
+    );
+  }
+
+  async getGiftCode(id: string): Promise<GiftCode | undefined> {
+    return this.giftCodes.get(id);
+  }
+
+  async createGiftCode(insertGiftCode: InsertGiftCode): Promise<GiftCode> {
+    const id = randomUUID();
+    const giftCode: GiftCode = {
+      id,
+      code: insertGiftCode.code,
+      amount: insertGiftCode.amount.toFixed(2),
+      active: true,
+      createdAt: new Date(),
+    };
+    this.giftCodes.set(id, giftCode);
+    return giftCode;
+  }
+
+  async updateGiftCode(id: string, updates: Partial<GiftCode>): Promise<GiftCode | undefined> {
+    const giftCode = this.giftCodes.get(id);
+    if (!giftCode) return undefined;
+
+    const updatedGiftCode = { ...giftCode, ...updates };
+    this.giftCodes.set(id, updatedGiftCode);
+    return updatedGiftCode;
+  }
+
+  async deleteGiftCode(id: string): Promise<boolean> {
+    return this.giftCodes.delete(id);
+  }
+
+  async getGiftCodeRedemption(userId: string, giftCodeId: string): Promise<GiftCodeRedemption | undefined> {
+    return Array.from(this.giftCodeRedemptions.values()).find(
+      (redemption) => redemption.userId === userId && redemption.giftCodeId === giftCodeId
+    );
+  }
+
+  async createGiftCodeRedemption(insertRedemption: InsertGiftCodeRedemption): Promise<GiftCodeRedemption> {
+    const id = randomUUID();
+    const redemption: GiftCodeRedemption = {
+      ...insertRedemption,
+      id,
+      redeemedAt: new Date(),
+    };
+    this.giftCodeRedemptions.set(id, redemption);
+    return redemption;
   }
 }
 

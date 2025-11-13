@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useState } from "react";
 import { format } from "date-fns";
+import { getUserId } from "@/lib/userUtils";
 
 // Helper to format price in INR
 const formatPrice = (price: string | number) =>
@@ -21,6 +22,7 @@ export default function ProductDetailPage() {
   const [rating, setRating] = useState(5);
   const [authorName, setAuthorName] = useState("");
   const [comment, setComment] = useState("");
+  const userId = getUserId();
 
   const { data: product, isLoading } = useQuery<Product>({
     queryKey: ["/api/products", id],
@@ -37,17 +39,17 @@ export default function ProductDetailPage() {
   });
 
   const addToCartMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/cart", { productId: id, quantity: 1 }),
+    mutationFn: async () => apiRequest("POST", "/api/cart", { userId, productId: id, quantity: 1 }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/cart?userId=${userId}`] });
       toast({ title: "Added to cart", description: "Product added to your cart successfully" });
     },
   });
 
   const buyNowMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/cart", { productId: id, quantity: 1 }),
+    mutationFn: async () => apiRequest("POST", "/api/cart", { userId, productId: id, quantity: 1 }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/cart?userId=${userId}`] });
       window.location.href = "/cart";
     },
   });

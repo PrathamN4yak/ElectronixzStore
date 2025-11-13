@@ -7,6 +7,9 @@ import {
   insertReviewSchema,
   insertPromoCodeSchema,
   insertOrderSchema,
+  insertGiftCodeSchema,
+  type User,
+  type GiftCode,
 } from "@shared/schema";
 
 const adminMiddleware = async (req: Request, res: Response, next: NextFunction) => {
@@ -47,9 +50,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/cart", async (_req, res) => {
+  app.get("/api/cart", async (req, res) => {
     try {
-      const cartItems = await storage.getAllCartItems();
+      const userId = req.query.userId as string || "guest-user";
+      const cartItems = await storage.getAllCartItems(userId);
       res.json(cartItems);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cart items" });
@@ -59,6 +63,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/cart", async (req, res) => {
     try {
       const validatedData = insertCartItemSchema.parse(req.body);
+      if (!validatedData.userId || validatedData.userId.trim() === "") {
+        return res.status(400).json({ error: "User ID is required" });
+      }
       const cartItem = await storage.addToCart(validatedData);
       res.status(201).json(cartItem);
     } catch (error) {
@@ -271,6 +278,321 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, admin: { id: admin.id, email: admin.email }, token });
     } catch (error) {
       res.status(500).json({ error: "Failed to login" });
+    }
+  });
+
+  app.get("/api/user/:id", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+
+  app.get("/api/gift-codes", adminMiddleware, async (_req, res) => {
+    try {
+      const giftCodes = await storage.getAllGiftCodes();
+      res.json(giftCodes);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch gift codes" });
+    }
+  });
+
+  app.post("/api/gift-codes", adminMiddleware, async (req, res) => {
+    try {
+      const validatedData = insertGiftCodeSchema.parse(req.body);
+      const giftCode = await storage.createGiftCode(validatedData);
+      res.status(201).json(giftCode);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid gift code data" });
+      }
+      res.status(500).json({ error: "Failed to create gift code" });
+    }
+  });
+
+  app.post("/api/gift-codes/generate", adminMiddleware, async (req, res) => {
+    try {
+      const { amount } = req.body;
+      if (!amount || typeof amount !== "number" || amount <= 0) {
+        return res.status(400).json({ error: "Valid amount is required" });
+      }
+
+      const code = `GFT${Math.random().toString(36).substring(2, 8).toUpperCase()}${Date.now().toString(36).toUpperCase()}`;
+      const giftCode = await storage.createGiftCode({ code, amount });
+      res.status(201).json(giftCode);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate gift code" });
+    }
+  });
+
+  app.patch("/api/gift-codes/:id", adminMiddleware, async (req, res) => {
+    try {
+      const updatedGiftCode = await storage.updateGiftCode(req.params.id, req.body);
+      if (!updatedGiftCode) {
+        return res.status(404).json({ error: "Gift code not found" });
+      }
+      res.json(updatedGiftCode);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update gift code" });
+    }
+  });
+
+  app.delete("/api/gift-codes/:id", adminMiddleware, async (req, res) => {
+    try {
+      const deleted = await storage.deleteGiftCode(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Gift code not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete gift code" });
+    }
+  });
+
+  app.post("/api/gift-codes/redeem", async (req, res) => {
+    try {
+      const { code, userId } = req.body;
+      if (!code || !userId) {
+        return res.status(400).json({ error: "Code and user ID are required" });
+      }
+
+      const giftCode = await storage.getGiftCodeByCode(code);
+      if (!giftCode) {
+        return res.status(404).json({ error: "Invalid or expired gift code" });
+      }
+
+      if (!giftCode.active) {
+        return res.status(400).json({ error: "Gift code has already been used" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const amount = parseFloat(giftCode.amount);
+      const updatedUser = await storage.updateUserWalletBalance(userId, amount);
+      await storage.updateGiftCode(giftCode.id, { active: false });
+      await storage.createGiftCodeRedemption({ userId, giftCodeId: giftCode.id });
+
+      res.json({ 
+        success: true, 
+        user: updatedUser, 
+        amountAdded: amount,
+        message: `Successfully added ${amount.toFixed(2)} to your wallet` 
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to redeem gift code" });
+    }
+  });
+
+  app.post("/api/checkout", async (req, res) => {
+    try {
+      const { userId, promoCode } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ error: "User ID is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const cartItems = await storage.getAllCartItems(userId);
+      if (cartItems.length === 0) {
+        return res.status(400).json({ error: "Cart is empty" });
+      }
+
+      let subtotal = 0;
+      const orderPromises: Promise<any>[] = [];
+
+      for (const item of cartItems) {
+        const product = await storage.getProduct(item.productId);
+        if (!product) continue;
+
+        const itemTotal = parseFloat(product.price) * item.quantity;
+        subtotal += itemTotal;
+
+        orderPromises.push(
+          storage.createOrder({
+            userId,
+            productId: item.productId,
+            quantity: item.quantity,
+            totalPrice: itemTotal.toFixed(2),
+          })
+        );
+      }
+
+      let discount = 0;
+      if (promoCode) {
+        const promo = await storage.getPromoCodeByCode(promoCode);
+        if (promo) {
+          discount = (subtotal * promo.discount) / 100;
+        }
+      }
+
+      const total = subtotal - discount;
+      const walletBalance = parseFloat(user.walletBalance);
+
+      if (walletBalance < total) {
+        return res.status(400).json({ 
+          error: "Insufficient wallet balance",
+          required: total.toFixed(2),
+          available: walletBalance.toFixed(2)
+        });
+      }
+
+      await storage.updateUserWalletBalance(userId, -total);
+      await Promise.all(orderPromises);
+      await storage.clearCart(userId);
+
+      const updatedUser = await storage.getUser(userId);
+
+      res.json({
+        success: true,
+        message: "Order placed successfully",
+        orderDetails: {
+          subtotal: subtotal.toFixed(2),
+          discount: discount.toFixed(2),
+          total: total.toFixed(2),
+          remainingBalance: updatedUser?.walletBalance || "0"
+        }
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "Insufficient wallet balance") {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to process checkout" });
+    }
+  });
+
+  app.get("/api/analytics/summary", adminMiddleware, async (_req, res) => {
+    try {
+      const orders = await storage.getAllOrders();
+      const products = await storage.getAllProducts();
+      
+      const totalSales = orders.reduce((sum, order) => sum + parseFloat(order.totalPrice), 0);
+      const totalOrders = orders.length;
+      
+      const productSales = orders.reduce((acc, order) => {
+        const existing = acc.find((p) => p.productId === order.productId);
+        if (existing) {
+          existing.quantity += order.quantity;
+          existing.revenue += parseFloat(order.totalPrice);
+        } else {
+          acc.push({
+            productId: order.productId,
+            quantity: order.quantity,
+            revenue: parseFloat(order.totalPrice),
+          });
+        }
+        return acc;
+      }, [] as Array<{ productId: string; quantity: number; revenue: number }>);
+      
+      res.json({
+        totalSales,
+        totalOrders,
+        averageOrderValue: totalOrders > 0 ? totalSales / totalOrders : 0,
+        totalProducts: products.length,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch analytics summary" });
+    }
+  });
+
+  app.get("/api/analytics/sales-trend", adminMiddleware, async (_req, res) => {
+    try {
+      const orders = await storage.getAllOrders();
+      
+      const salesByDate = orders.reduce((acc, order) => {
+        const date = order.createdAt.toISOString().split('T')[0];
+        if (!acc[date]) {
+          acc[date] = { date, sales: 0, orders: 0 };
+        }
+        acc[date].sales += parseFloat(order.totalPrice);
+        acc[date].orders += 1;
+        return acc;
+      }, {} as Record<string, { date: string; sales: number; orders: number }>);
+      
+      const trend = Object.values(salesByDate).sort((a, b) => 
+        a.date.localeCompare(b.date)
+      );
+      
+      res.json(trend);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sales trend" });
+    }
+  });
+
+  app.get("/api/analytics/top-products", adminMiddleware, async (_req, res) => {
+    try {
+      const orders = await storage.getAllOrders();
+      const products = await storage.getAllProducts();
+      
+      const productSales = orders.reduce((acc, order) => {
+        const existing = acc.find((p) => p.productId === order.productId);
+        if (existing) {
+          existing.quantity += order.quantity;
+          existing.revenue += parseFloat(order.totalPrice);
+        } else {
+          acc.push({
+            productId: order.productId,
+            quantity: order.quantity,
+            revenue: parseFloat(order.totalPrice),
+          });
+        }
+        return acc;
+      }, [] as Array<{ productId: string; quantity: number; revenue: number }>);
+      
+      const topProducts = productSales
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10)
+        .map((ps) => {
+          const product = products.find((p) => p.id === ps.productId);
+          return { 
+            ...ps, 
+            productName: product?.name || "Unknown",
+            category: product?.category || "Unknown"
+          };
+        });
+      
+      res.json(topProducts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch top products" });
+    }
+  });
+
+  app.get("/api/analytics/category-revenue", adminMiddleware, async (_req, res) => {
+    try {
+      const orders = await storage.getAllOrders();
+      const products = await storage.getAllProducts();
+      
+      const categoryRevenue = orders.reduce((acc, order) => {
+        const product = products.find((p) => p.id === order.productId);
+        if (!product) return acc;
+        
+        const category = product.category;
+        if (!acc[category]) {
+          acc[category] = 0;
+        }
+        acc[category] += parseFloat(order.totalPrice);
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const result = Object.entries(categoryRevenue).map(([category, revenue]) => ({
+        category,
+        revenue
+      }));
+      
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch category revenue" });
     }
   });
 

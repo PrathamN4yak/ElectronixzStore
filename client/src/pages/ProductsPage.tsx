@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Product } from "@shared/schema";
 import { ShoppingCart } from "lucide-react";
+import { getUserId } from "@/lib/userUtils";
 
 // Helper to format price in INR
 const formatPrice = (price: string | number) =>
@@ -13,14 +14,16 @@ const formatPrice = (price: string | number) =>
 
 export default function ProductsPage() {
   const { toast } = useToast();
+  const userId = getUserId();
+
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
   });
 
   const addToCartMutation = useMutation({
-    mutationFn: async (productId: string) => apiRequest("POST", "/api/cart", { productId, quantity: 1 }),
+    mutationFn: async (productId: string) => apiRequest("POST", "/api/cart", { userId, productId, quantity: 1 }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/cart?userId=${userId}`] });
       toast({
         title: "Added to cart",
         description: "Product added to your cart successfully",

@@ -16,6 +16,7 @@ export const products = pgTable("products", {
 
 export const cartItems = pgTable("cart_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
   productId: varchar("product_id").notNull(),
   quantity: integer("quantity").notNull().default(1),
 });
@@ -46,6 +47,7 @@ export const promoCodes = pgTable("promo_codes", {
 
 export const orders = pgTable("orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
   productId: varchar("product_id").notNull(),
   quantity: integer("quantity").notNull(),
   totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
@@ -56,6 +58,28 @@ export const admins = pgTable("admins", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
+});
+
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  displayName: text("display_name").notNull(),
+  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const giftCodes = pgTable("gift_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").notNull().unique(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const giftCodeRedemptions = pgTable("gift_code_redemptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  giftCodeId: varchar("gift_code_id").notNull(),
+  redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
 });
 
 export const insertProductSchema = createInsertSchema(products).omit({
@@ -110,6 +134,28 @@ export const insertAdminSchema = createInsertSchema(admins).omit({
   id: true,
 });
 
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  walletBalance: true,
+}).extend({
+  displayName: z.string().min(2, "Display name must be at least 2 characters"),
+});
+
+export const insertGiftCodeSchema = createInsertSchema(giftCodes).omit({
+  id: true,
+  createdAt: true,
+  active: true,
+}).extend({
+  code: z.string().min(6, "Gift code must be at least 6 characters").toUpperCase(),
+  amount: z.number().min(1, "Amount must be at least 1"),
+});
+
+export const insertGiftCodeRedemptionSchema = createInsertSchema(giftCodeRedemptions).omit({
+  id: true,
+  redeemedAt: true,
+});
+
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
 
@@ -121,3 +167,12 @@ export type Order = typeof orders.$inferSelect;
 
 export type InsertAdmin = z.infer<typeof insertAdminSchema>;
 export type Admin = typeof admins.$inferSelect;
+
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+
+export type InsertGiftCode = z.infer<typeof insertGiftCodeSchema>;
+export type GiftCode = typeof giftCodes.$inferSelect;
+
+export type InsertGiftCodeRedemption = z.infer<typeof insertGiftCodeRedemptionSchema>;
+export type GiftCodeRedemption = typeof giftCodeRedemptions.$inferSelect;

@@ -157,8 +157,14 @@ export default function AdminDashboardPage() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
+          <Link href="/admin/analytics">
+            <Button data-testid="button-view-analytics">View Analytics</Button>
+          </Link>
           <Link href="/admin/promo-codes">
-            <Button data-testid="button-manage-promo">Manage Promo Codes</Button>
+            <Button variant="outline" data-testid="button-manage-promo">Manage Promo Codes</Button>
+          </Link>
+          <Link href="/admin/gift-codes">
+            <Button variant="outline" data-testid="button-manage-gifts">Manage Gift Codes</Button>
           </Link>
           <Link href="/admin/reviews">
             <Button variant="outline" data-testid="button-manage-reviews">

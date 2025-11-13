@@ -2,12 +2,13 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Link } from "wouter";
-import { Minus, Plus, Trash2, ShoppingBag, Tag } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Minus, Plus, Trash2, ShoppingBag, Tag, Gift } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { CartItem, Product, PromoCode } from "@shared/schema";
+import type { CartItem, Product, PromoCode, User } from "@shared/schema";
 import { useState } from "react";
+import { getUserId } from "@/lib/userUtils";
 
 // Helper to format price in INR
 const formatPrice = (price: string | number) =>
@@ -15,21 +16,31 @@ const formatPrice = (price: string | number) =>
 
 export default function CartPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [promoCode, setPromoCode] = useState("");
   const [appliedPromoCode, setAppliedPromoCode] = useState<PromoCode | null>(null);
+  const [giftCode, setGiftCode] = useState("");
+  const userId = getUserId();
 
-  const { data: cartItems = [] } = useQuery<CartItem[]>({ queryKey: ["/api/cart"] });
+  const { data: cartItems = [] } = useQuery<CartItem[]>({ 
+    queryKey: [`/api/cart?userId=${userId}`],
+    enabled: !!userId,
+  });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ["/api/products"] });
+  const { data: user } = useQuery<User>({
+    queryKey: [`/api/user/${userId}`],
+    enabled: !!userId,
+  });
 
   const updateQuantityMutation = useMutation({
     mutationFn: async ({ id, quantity }: { id: string; quantity: number }) =>
       apiRequest("PATCH", `/api/cart/${id}`, { quantity }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/cart"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/cart?userId=${userId}`] }),
   });
 
   const removeItemMutation = useMutation({
     mutationFn: async (id: string) => apiRequest("DELETE", `/api/cart/${id}`, {}),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/cart"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/cart?userId=${userId}`] }),
   });
 
   const validatePromoCodeMutation = useMutation<PromoCode, Error, string>({
@@ -52,6 +63,52 @@ export default function CartPage() {
     },
   });
 
+  const redeemGiftCodeMutation = useMutation({
+    mutationFn: async (code: string) => {
+      return await apiRequest("POST", "/api/gift-codes/redeem", { code, userId });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/user/${userId}`] });
+      toast({ 
+        title: "Gift code redeemed!", 
+        description: data.message 
+      });
+      setGiftCode("");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to redeem gift code", 
+        description: error.message || "Invalid or already used gift code",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const checkoutMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/checkout", { 
+        userId, 
+        promoCode: appliedPromoCode?.code 
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/cart?userId=${userId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/user/${userId}`] });
+      toast({ 
+        title: "Order placed successfully!", 
+        description: "Your order has been confirmed" 
+      });
+      setLocation("/");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Checkout failed", 
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    },
+  });
+
   const handleApplyPromoCode = () => {
     if (!promoCode.trim()) {
       toast({ 
@@ -62,6 +119,41 @@ export default function CartPage() {
       return;
     }
     validatePromoCodeMutation.mutate(promoCode.trim().toUpperCase());
+  };
+
+  const handleRedeemGiftCode = () => {
+    if (!giftCode.trim()) {
+      toast({ 
+        title: "Enter a gift code", 
+        description: "Please enter a gift code to redeem",
+        variant: "destructive"
+      });
+      return;
+    }
+    redeemGiftCodeMutation.mutate(giftCode.trim().toUpperCase());
+  };
+
+  const handleCheckout = () => {
+    if (!user) {
+      toast({ 
+        title: "User not found", 
+        description: "Please refresh the page and try again",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const walletBalance = parseFloat(user.walletBalance);
+    if (walletBalance < total) {
+      toast({ 
+        title: "Insufficient wallet balance", 
+        description: `You need ${formatPrice(total - walletBalance)} more to complete this order`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    checkoutMutation.mutate();
   };
 
   const cartWithProducts = cartItems
@@ -191,7 +283,32 @@ export default function CartPage() {
               <h2 className="text-2xl font-bold mb-6 text-foreground">Order Summary</h2>
               
               <div className="mb-6">
-                <label className="block text-sm font-medium mb-2">Promo Code</label>
+                <label className="block text-sm font-medium mb-2">Redeem Gift Code</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={giftCode}
+                    onChange={(e) => setGiftCode(e.target.value.toUpperCase())}
+                    placeholder="Enter gift code"
+                    data-testid="input-gift-code"
+                  />
+                  <Button
+                    onClick={handleRedeemGiftCode}
+                    disabled={redeemGiftCodeMutation.isPending}
+                    data-testid="button-redeem-gift"
+                  >
+                    <Gift className="w-4 h-4 mr-2" />
+                    {redeemGiftCodeMutation.isPending ? "..." : "Redeem"}
+                  </Button>
+                </div>
+                {user && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Current wallet balance: <span className="font-semibold text-primary">{formatPrice(user.walletBalance)}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-2">Promo Code (Discount)</label>
                 <div className="flex gap-2">
                   <Input
                     value={promoCode}
@@ -261,10 +378,18 @@ export default function CartPage() {
               <Button
                 size="lg"
                 className="w-full h-14 text-base font-medium mb-4"
+                onClick={handleCheckout}
+                disabled={checkoutMutation.isPending || !user}
                 data-testid="button-checkout"
               >
-                PROCEED TO CHECKOUT
+                {checkoutMutation.isPending ? "PROCESSING..." : "PROCEED TO CHECKOUT"}
               </Button>
+              
+              {user && parseFloat(user.walletBalance) < total && (
+                <p className="text-sm text-red-600 text-center mb-4">
+                  Insufficient balance. Please redeem a gift code first.
+                </p>
+              )}
 
               <Link href="/products" data-testid="link-continue-shopping">
                 <Button

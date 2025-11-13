@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Tag, MessageSquare, LogOut } from "lucide-react";
+import { LayoutDashboard, Tag, MessageSquare, LogOut, Gift, BarChart } from "lucide-react";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -16,7 +16,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   const navItems = [
     { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/analytics", label: "Analytics", icon: BarChart },
     { href: "/admin/promo-codes", label: "Promo Codes", icon: Tag },
+    { href: "/admin/gift-codes", label: "Gift Codes", icon: Gift },
     { href: "/admin/reviews", label: "Reviews", icon: MessageSquare },
   ];
 

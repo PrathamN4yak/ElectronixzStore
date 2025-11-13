@@ -1,15 +1,26 @@
 import { Link, useLocation } from "wouter";
-import { ShoppingCart, Menu, X } from "lucide-react";
+import { ShoppingCart, Menu, X, Wallet } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { CartItem } from "@shared/schema";
+import type { CartItem, User } from "@shared/schema";
+import { getUserId } from "@/lib/userUtils";
+
+const formatPrice = (price: string | number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(price));
 
 export function Header() {
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const userId = getUserId();
 
   const { data: cartItems = [] } = useQuery<CartItem[]>({
-    queryKey: ["/api/cart"],
+    queryKey: [`/api/cart?userId=${userId}`],
+    enabled: !!userId,
+  });
+
+  const { data: user } = useQuery<User>({
+    queryKey: [`/api/user/${userId}`],
+    enabled: !!userId,
   });
 
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -49,6 +60,15 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-4">
+            {user && (
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full">
+                <Wallet className="w-4 h-4 text-primary" />
+                <span className="text-sm font-semibold text-primary" data-testid="text-wallet-balance">
+                  {formatPrice(user.walletBalance)}
+                </span>
+              </div>
+            )}
+            
             <Link
               href="/cart"
               className="relative hover-elevate active-elevate-2 p-2 rounded-md"

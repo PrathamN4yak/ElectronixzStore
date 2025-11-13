@@ -14,6 +14,8 @@ import ContactPage from "@/pages/ContactPage";
 import AdminLoginPage from "@/pages/AdminLoginPage";
 import AdminDashboardPage from "@/pages/AdminDashboardPage";
 import AdminPromoCodesPage from "@/pages/AdminPromoCodesPage";
+import AdminGiftCodesPage from "@/pages/AdminGiftCodesPage";
+import AdminAnalyticsPage from "@/pages/AdminAnalyticsPage";
 import AdminReviewsPage from "@/pages/AdminReviewsPage";
 import AdminLayout from "@/components/AdminLayout";
 import NotFound from "@/pages/not-found";
@@ -36,6 +38,16 @@ function Routes() {
       <Route path="/admin/promo-codes">
         <AdminLayout>
           <AdminPromoCodesPage />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/gift-codes">
+        <AdminLayout>
+          <AdminGiftCodesPage />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/analytics">
+        <AdminLayout>
+          <AdminAnalyticsPage />
         </AdminLayout>
       </Route>
       <Route path="/admin/reviews">
