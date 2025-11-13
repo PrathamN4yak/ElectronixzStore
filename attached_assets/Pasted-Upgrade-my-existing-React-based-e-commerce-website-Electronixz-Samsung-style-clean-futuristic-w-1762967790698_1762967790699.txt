@@ -1,0 +1,69 @@
+Upgrade my existing React-based e-commerce website Electronixz (Samsung-style — clean, futuristic, with blue #1428A0, white, and light gray colors) by adding the following advanced features:
+
+1. Product Rating & Review System
+
+Each product page should allow customers to:
+
+Leave a star rating (1–5 stars).
+
+Write a review/comment.
+
+Display the average rating and a list of reviews below the product details.
+
+Reviews and ratings should be stored locally (use JSON or localStorage).
+
+2. Promo Code & Discount System
+
+On the Cart page, add an input box for customers to enter a promo code.
+
+If the code is valid, apply a discount percentage to the total price dynamically.
+
+Show the discount and final total clearly.
+
+Display a small message like “Promo code applied successfully!” when it’s valid.
+
+3. Admin Panel (Password Protected)
+
+Create an /admin page that requires login with credentials:
+
+Email: admin@electronixz.com
+
+Password: 12345
+
+The admin dashboard should include:
+
+a. Promo Code Management
+
+Create, edit, and delete promo codes.
+
+Set the discount percentage for each code.
+
+List all existing promo codes with their discount values.
+
+b. Sales Analytics
+
+Display total sales, total orders, and best-selling products.
+
+Show data visually using pie, bar, and line charts (use any chart library like Recharts or Chart.js).
+
+Allow viewing sales per product or by category.
+
+c. Review Management
+
+Show all user reviews and ratings from the site.
+
+Allow admin to delete, edit, or hide any review.
+
+Add an option for admin to create fake or new reviews manually (e.g., for showcasing on new products).
+
+4. Design & Layout
+
+Keep the Samsung-style futuristic theme consistent.
+
+Use smooth animations, clean UI, and responsive layouts.
+
+Make the admin dashboard visually distinct but matching the Electronixz brand (use blue & white theme).
+
+Use React components and Tailwind CSS for styling.
+
+Keep all existing pages (Home, Products, About, Contact, Cart) intact — just integrate these new features cleanly.
